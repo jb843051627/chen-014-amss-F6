@@ -36,14 +36,19 @@ public class TAmssOutCard implements Serializable {
     @ApiModelProperty(value = "变型拖拉机牌证缴回事务卡号")
     private String bizNo;
 
-    /** 当前缴回段 0..3（收牌/验车/清账/了结） */
+    /** 变型拖拉机号牌（一台车一个号） */
+    @TableField("veh_no")
+    @ApiModelProperty(value = "变型拖拉机号牌（一台车一个号）")
+    private String vehNo;
+
+    /** 当前缴回段镜像 0..3（收牌/验车/清账/了结）；权威段序以履历线推出，页面与经办人口径不作数 */
     @TableField("stage")
-    @ApiModelProperty(value = "当前缴回段 0..3（收牌/验车/清账/了结）")
+    @ApiModelProperty(value = "当前缴回段镜像 0..3（收牌/验车/清账/了结）；权威段序以履历线推出")
     private Integer stage;
 
-    /** 卡的落定 0未起 1在办 2已了结 */
+    /** 卡的落定 1在办 2已了结；了结即钉死，只许翻不许碰 */
     @TableField("status")
-    @ApiModelProperty(value = "卡的落定 0未起 1在办 2已了结")
+    @ApiModelProperty(value = "卡的落定 1在办 2已了结")
     private Integer status;
 
     /** 缴回记事 */
@@ -102,6 +107,14 @@ public class TAmssOutCard implements Serializable {
 
     public void setBizNo(String bizNo) {
         this.bizNo = bizNo;
+    }
+
+    public String getVehNo() {
+        return vehNo;
+    }
+
+    public void setVehNo(String vehNo) {
+        this.vehNo = vehNo;
     }
 
     public Integer getStage() {

@@ -76,8 +76,10 @@ CREATE TABLE IF NOT EXISTS t_amss_duty_task (
 CREATE TABLE IF NOT EXISTS t_amss_out_card (
   id bigint NOT NULL COMMENT '主键',
   biz_no varchar(64) DEFAULT NULL COMMENT '变型拖拉机牌证缴回事务卡号',
-  stage int DEFAULT NULL COMMENT '当前缴回段 0..3（收牌/验车/清账/了结）',
-  status int DEFAULT NULL COMMENT '卡的落定 0未起 1在办 2已了结',
+  veh_no varchar(64) NOT NULL COMMENT '变型拖拉机号牌（一台车一个号）',
+  active_veh_no varchar(64) GENERATED ALWAYS AS (if((`status` = 2 or `del_flag` = 1),NULL,`veh_no`)) STORED COMMENT '活卡占位：在办挂车号、了结或删除腾空，配唯一索引保一车一活卡',
+  stage int DEFAULT 0 COMMENT '当前缴回段镜像 0..3（收牌/验车/清账/了结），权威段序以履历线推出',
+  status int DEFAULT 1 COMMENT '卡的落定 0未起 1在办 2已了结',
   content varchar(255) DEFAULT NULL COMMENT '缴回记事',
   last_action varchar(64) DEFAULT NULL COMMENT '最近一次过口动作',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
@@ -86,8 +88,33 @@ CREATE TABLE IF NOT EXISTS t_amss_out_card (
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_out_card_biz_no (biz_no),
+  UNIQUE KEY uk_out_card_active_veh (active_veh_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='变型拖拉机牌证缴回事务卡';
+
+CREATE TABLE IF NOT EXISTS t_amss_out_line (
+  id bigint NOT NULL COMMENT '主键',
+  card_id bigint NOT NULL COMMENT '所属缴回事务卡',
+  stage int NOT NULL COMMENT '过口落定段 0收牌 1验车 2清账 3了结（退回归目的段、缘由归清账段）',
+  action int NOT NULL COMMENT '过口动作 1向前 2退回重来 3清账缘由续记',
+  ver_no int NOT NULL COMMENT '段内说法版本（退回开新版、旧版沉底）；缘由线记缘由笔次',
+  plate_qty int DEFAULT NULL COMMENT '号牌实收几枚（验车段三样之一，只挂验车线；清账段拿它与当场实收对）',
+  license_status varchar(255) DEFAULT NULL COMMENT '行驶证与检验在册情况（验车段料）',
+  claim_clear int DEFAULT NULL COMMENT '名下未结事故认定与罚款 0尚有未结 1已清（验车段料）',
+  return_reason varchar(32) DEFAULT NULL COMMENT '缴回缘由 1报废 2灭失 3转外省 4主动交回',
+  actor varchar(64) NOT NULL COMMENT '过口经办人',
+  act_time datetime NOT NULL COMMENT '过口时刻',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注（退回原因等）',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_out_line_once (card_id, stage, ver_no, action),
+  KEY idx_out_line_card (card_id, act_time, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='变型拖拉机牌证缴回履历线（缴回履历）';
 
 CREATE TABLE IF NOT EXISTS t_amss_pass_bill (
   id bigint NOT NULL COMMENT '主键',
@@ -132,3 +159,18 @@ INSERT IGNORE INTO t_amss_coop_doc (id, site_no, site_name, site_type, road_name
 VALUES (0, 'ZZ00', '江原县农机服务组织底档（临川县支农农机专业合作社）', '农机合作社', '江原省—江原市—临川县', 80.00, 200.00, 500.00, 0, 0, 'seed', NOW()),
        (1, 'ZZ01', '江原县农机服务组织底档（临川县丰收跨区作业队，已收回）', '跨区作业队', '江原省—江原市—临川县', 80.00, 200.00, 500.00, 1, 0, 'seed', NOW());
 
+
+-- =====================================================================
+-- 已部署旧库升级（CREATE TABLE IF NOT EXISTS 不会补列/补表，手工执行一次）
+-- 1) 卡表补车号、活卡占位生成列与索引
+-- ALTER TABLE t_amss_out_card
+--   ADD COLUMN veh_no varchar(64) NOT NULL COMMENT '变型拖拉机号牌（一台车一个号）' AFTER biz_no,
+--   ADD COLUMN active_veh_no varchar(64) GENERATED ALWAYS AS
+--     (if((status = 2 or del_flag = 1), NULL, veh_no)) STORED
+--     COMMENT '活卡占位：在办挂车号、了结或删除腾空',
+--   ADD UNIQUE KEY uk_out_card_biz_no (biz_no),
+--   ADD UNIQUE KEY uk_out_card_active_veh (active_veh_no);
+-- 旧卡补车号（按实际业务回填，例）：
+-- UPDATE t_amss_out_card SET veh_no = id WHERE veh_no IS NULL OR veh_no = '';
+-- 2) 履历线表为新表，直接执行上文 CREATE TABLE t_amss_out_line 即可。
+-- =====================================================================
