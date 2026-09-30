@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS t_amss_duty_task (
 CREATE TABLE IF NOT EXISTS t_amss_out_card (
   id bigint NOT NULL COMMENT '主键',
   biz_no varchar(64) DEFAULT NULL COMMENT '变型拖拉机牌证缴回事务卡号',
-  stage int DEFAULT NULL COMMENT '当前缴回段 0..3（收牌/验车/清账/了结）',
+  vehicle_plate_no varchar(64) DEFAULT NULL COMMENT '车辆号牌（一车一卡，按此号牌认车）',
+  stage int DEFAULT NULL COMMENT '当前缴回段 0..3（收牌/验车/清账/了结），系统照履历推得',
   status int DEFAULT NULL COMMENT '卡的落定 0未起 1在办 2已了结',
   content varchar(255) DEFAULT NULL COMMENT '缴回记事',
   last_action varchar(64) DEFAULT NULL COMMENT '最近一次过口动作',
@@ -86,8 +87,33 @@ CREATE TABLE IF NOT EXISTS t_amss_out_card (
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  active_plate varchar(64) GENERATED ALWAYS AS (case when (`status` = 1) and (`del_flag` = 0) then `vehicle_plate_no` else NULL end) VIRTUAL COMMENT '活卡占位：在办时等于车牌，已了结/删除为NULL',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_amss_out_card_active (active_plate),
+  KEY idx_amss_out_card_no (biz_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='变型拖拉机牌证缴回事务卡';
+
+-- 缴回履历：一笔接一笔只追加，不删不改；同一卡同一段可有多个版本，current_flag=1 的摆明面，余者沉底。
+CREATE TABLE IF NOT EXISTS t_amss_out_card_stage (
+  id bigint NOT NULL COMMENT '主键',
+  card_id bigint NOT NULL COMMENT '所属缴回事务卡 t_amss_out_card.id',
+  stage_no int NOT NULL COMMENT '段号 0收牌 1验车 2清账 3了结',
+  rev_no int NOT NULL COMMENT '本段同动作流水序号（从1起；如验车说法第1/第2版，退回动作另计）',
+  current_flag int NOT NULL DEFAULT '1' COMMENT '是否明面版本 1明面 0已沉底',
+  action_type varchar(16) NOT NULL COMMENT '过口动作 PASS通过 ROLLBACK退回 REASON缘由补记',
+  plate_count int DEFAULT NULL COMMENT '号牌实收枚数',
+  license_status varchar(255) DEFAULT NULL COMMENT '行驶证与检验在册情况',
+  open_case_flag int DEFAULT NULL COMMENT '名下有无未结事故认定与罚款 0无 1有',
+  return_reason varchar(32) DEFAULT NULL COMMENT '缴回缘由 SCRAP报废 LOST灭失 OUT_PROV转外省 VOLUNTARY主动交回',
+  stage_data varchar(1000) DEFAULT NULL COMMENT '本段提交原话（JSON，原样落档）',
+  operator varchar(64) DEFAULT NULL COMMENT '过口经办人',
+  happen_time datetime DEFAULT NULL COMMENT '这笔落下的时辰',
+  create_time datetime DEFAULT NULL COMMENT '记账时间',
+  current_stage int GENERATED ALWAYS AS (case when (`current_flag` = 1) and (`action_type` = 'PASS') then `stage_no` else NULL end) VIRTUAL COMMENT '明面占位：明面PASS笔等于段号，余者NULL',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_amss_out_card_stage_current (card_id, current_stage),
+  KEY idx_amss_out_card_stage_card (card_id, stage_no, rev_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='变型拖拉机牌证缴回履历（段流水，只追加）';
 
 CREATE TABLE IF NOT EXISTS t_amss_pass_bill (
   id bigint NOT NULL COMMENT '主键',

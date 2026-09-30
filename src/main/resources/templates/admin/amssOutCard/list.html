@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('变型拖拉机牌证缴回台账')"/>
+</head>
+<body class="pear-container">
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" action="">
+            <div class="layui-form-item">
+                <label class="layui-form-label">车辆号牌</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="vehiclePlateNo" placeholder="号牌" class="layui-input">
+                </div>
+                <label class="layui-form-label">事务卡号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="bizNo" placeholder="卡号" class="layui-input">
+                </div>
+                <label class="layui-form-label">落定</label>
+                <div class="layui-input-inline">
+                    <select name="status" class="layui-input">
+                        <option value="">全部</option>
+                        <option value="1">在办</option>
+                        <option value="2">已了结</option>
+                    </select>
+                </div>
+                <button class="pear-btn pear-btn-md pear-btn-primary" lay-submit lay-filter="out-card-query">
+                    <i class="layui-icon layui-icon-search"></i> 查询
+                </button>
+                <button type="reset" class="pear-btn pear-btn-md">
+                    <i class="layui-icon layui-icon-refresh"></i> 重置
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="layui-card">
+    <div class="layui-card-body">
+        <table id="out-card-table" lay-filter="out-card-table"></table>
+    </div>
+</div>
+</body>
+
+<script type="text/html" id="out-card-toolbar">
+    <button shiro:hasPermission="amssOutCard:open" class="pear-btn pear-btn-primary pear-btn-md" lay-event="open">
+        <i class="layui-icon layui-icon-add-1"></i> 起卡
+    </button>
+    <button shiro:hasPermission="amssOutCard:list" class="pear-btn pear-btn-md" lay-event="summary">
+        <i class="layui-icon layui-icon-chart"></i> 年终报数
+    </button>
+</script>
+
+<script type="text/html" id="out-card-bar">
+    {{#  if(d.status === 2){ }}
+    <button shiro:hasPermission="amssOutCard:view" class="pear-btn pear-btn-sm" lay-event="history">
+        <i class="layui-icon layui-icon-log"></i> 履历
+    </button>
+    {{#  } else { }}
+    <button shiro:hasPermission="amssOutCard:advance" class="pear-btn pear-btn-primary pear-btn-sm" lay-event="advance">
+        <i class="layui-icon layui-icon-right"></i> 过段
+    </button>
+    {{#  if(d.stage > 0){ }}
+    <button shiro:hasPermission="amssOutCard:rollback" class="pear-btn pear-btn-warming pear-btn-sm" lay-event="rollback">
+        <i class="layui-icon layui-icon-left"></i> 退回
+    </button>
+    {{#  } }}
+    {{#  if(d.stage === 2){ }}
+    <button shiro:hasPermission="amssOutCard:advance" class="pear-btn pear-btn-normal pear-btn-sm" lay-event="reason">
+        <i class="layui-icon layui-icon-edit"></i> 缘由
+    </button>
+    {{#  } }}
+    <button shiro:hasPermission="amssOutCard:view" class="pear-btn pear-btn-sm" lay-event="history">
+        <i class="layui-icon layui-icon-log"></i> 履历
+    </button>
+    {{#  } }}
+</script>
+
+<th:block th:include="include :: footer"/>
+<script>
+    layui.use(['table', 'form', 'jquery', 'layer'], function () {
+        let table = layui.table;
+        let form = layui.form;
+        let $ = layui.jquery;
+        let layer = layui.layer;
+
+        let MODULE_PATH = rootPath + "/amssOutCard/";
+        let STAGE_NAMES = ['收牌', '验车', '清账', '了结'];
+        let REASON_NAMES = {SCRAP: '报废', LOST: '灭失', OUT_PROV: '转外省', VOLUNTARY: '主动交回'};
+        let ACTION_NAMES = {PASS: '通过', ROLLBACK: '退回沉底', REASON: '缘由补记'};
+
+        table.render({
+            elem: '#out-card-table',
+            url: MODULE_PATH + 'list',
+            page: true,
+            method: 'get',
+            skin: 'line',
+            toolbar: '#out-card-toolbar',
+            defaultToolbar: [{layEvent: 'refresh', icon: 'layui-icon-refresh'}, 'filter', 'print', 'exports'],
+            cols: [[
+                {title: 'ID', field: 'id', align: 'center', hide: true},
+                {title: '事务卡号', field: 'bizNo', align: 'center', width: 180},
+                {title: '车辆号牌', field: 'vehiclePlateNo', align: 'center', width: 140},
+                {title: '卡停何处', field: 'stage', align: 'center', width: 160, templet: stageTpl},
+                {title: '最近动作', field: 'lastAction', align: 'center'},
+                {title: '起卡时间', field: 'createTime', align: 'center', width: 170},
+                {title: '操作', toolbar: '#out-card-bar', align: 'center', width: 300}
+            ]]
+        });
+
+        // layui 模板里不支持数组直取，单独包一层
+        function stageTpl(d) {
+            if (d.status === 2) {
+                return '<span style="color:#16b777">已了结（钉死）</span>';
+            }
+            return '压在【<b>' + STAGE_NAMES[d.stage] + '</b>】段';
+        }
+
+        table.on('tool(out-card-table)', function (obj) {
+            if (obj.event === 'advance') {
+                openAdvance(obj);
+            } else if (obj.event === 'rollback') {
+                openRollback(obj);
+            } else if (obj.event === 'reason') {
+                openReason(obj);
+            } else if (obj.event === 'history') {
+                openHistory(obj);
+            }
+        });
+
+        table.on('toolbar(out-card-table)', function (obj) {
+            if (obj.event === 'open') {
+                openCard();
+            } else if (obj.event === 'summary') {
+                openSummary();
+            } else if (obj.event === 'refresh') {
+                table.reload('out-card-table');
+            }
+        });
+
+        form.on('submit(out-card-query)', function (data) {
+            table.reload('out-card-table', {where: data.field, page: {curr: 1}});
+            return false;
+        });
+
+        // 起卡：一车一卡，第二张系统当场挡回并报明压在何段
+        function openCard() {
+            layer.open({
+                type: 1, title: '起卡（一车一卡，从收牌段走起）', area: ['460px', '300px'],
+                content:
+                    '<form class="layui-form" style="margin:20px">' +
+                    '  <div class="layui-form-item"><label class="layui-form-label">车辆号牌</label>' +
+                    '    <div class="layui-input-block"><input name="vehiclePlateNo" class="layui-input" placeholder="认车凭据，必填"></div></div>' +
+                    '  <div class="layui-form-item"><label class="layui-form-label">事务卡号</label>' +
+                    '    <div class="layui-input-block"><input name="bizNo" class="layui-input" placeholder="留空由系统编号"></div></div>' +
+                    '  <div class="layui-form-item"><div class="layui-input-block">' +
+                    '    <button class="pear-btn pear-btn-primary" lay-submit lay-filter="out-card-open">起卡</button></div></div>' +
+                    '</form>',
+                success: function () {
+                    form.on('submit(out-card-open)', function (data) {
+                        if (!data.field.vehiclePlateNo) {
+                            layer.msg('车辆号牌必填', {icon: 2});
+                            return false;
+                        }
+                        $.post(MODULE_PATH + 'open', data.field, function (res) {
+                            if (res.code === 200) {
+                                layer.closeAll();
+                                layer.msg(res.msg, {icon: 1});
+                                table.reload('out-card-table');
+                            } else {
+                                layer.msg(res.msg, {icon: 2, time: 4000});
+                            }
+                        });
+                        return false;
+                    });
+                }
+            });
+        }
+
+        // 过段：卡停在哪段，就只放那段该交的东西
+        function openAdvance(obj) {
+            // 卡当下算走到第几段，问系统，不认表上摆的
+            $.get(MODULE_PATH + 'detail', {id: obj.data.id}, function (res) {
+                if (res.code !== 200) {
+                    layer.msg(res.msg, {icon: 2});
+                    return;
+                }
+                let stage = res.data.currentStage;
+                let bizNo = res.data.card.bizNo;
+                let body;
+                if (stage === 0) {
+                    body = '<div style="margin:20px">收牌段：号牌已实收即可过段，无另填项。</div>';
+                } else if (stage === 1) {
+                    body =
+                        '<form class="layui-form" style="margin:20px">' +
+                        '  <div class="layui-form-item"><label class="layui-form-label">实收枚数</label>' +
+                        '    <div class="layui-input-block"><input type="number" min="0" name="plateCount" class="layui-input"></div></div>' +
+                        '  <div class="layui-form-item"><label class="layui-form-label">行驶证/检验</label>' +
+                        '    <div class="layui-input-block"><input name="licenseStatus" class="layui-input" placeholder="行驶证与检验在册情况"></div></div>' +
+                        '  <div class="layui-form-item"><label class="layui-form-label">未结事故罚款</label>' +
+                        '    <div class="layui-input-block"><select name="openCaseFlag">' +
+                        '      <option value="0">无</option><option value="1">有未结</option></select></div></div>' +
+                        '</form>';
+                } else if (stage === 2) {
+                    body = '<div style="margin:20px;line-height:1.8">清账段：缴回缘由不在这儿填——' +
+                        '请先点列表上的【缘由】按钮记一笔（报废/灭失/转外省/主动交回，改一次续一笔），' +
+                        '缘由落过明面，再回到这里提交过段。</div>';
+                } else {
+                    body = '<div style="margin:20px">了结段：此笔落下，卡即钉死，只许翻不许碰。</div>';
+                }
+                layer.open({
+                    type: 1, title: '过段 → ' + STAGE_NAMES[stage] + '（卡号 ' + obj.data.bizNo + '）', area: ['500px', '360px'],
+                    content: body + '<div style="margin:0 20px 20px"><button class="pear-btn pear-btn-primary" id="out-card-advance-btn">提交过段</button></div>',
+                    success: function () {
+                        form.render();
+                        $('#out-card-advance-btn').on('click', function () {
+                            let field = {};
+                            let $form = $('.layui-layer-content .layui-form');
+                            if ($form.length) {
+                                field = $form.serializeArray().reduce(function (m, o) {
+                                    m[o.name] = o.value;
+                                    return m;
+                                }, {});
+                            }
+                            field.id = obj.data.id;
+                            $.post(MODULE_PATH + 'advance', field, function (r) {
+                                if (r.code === 200) {
+                                    layer.closeAll();
+                                    layer.msg(r.msg || '过段已成', {icon: 1});
+                                    table.reload('out-card-table');
+                                } else {
+                                    layer.msg(r.msg, {icon: 2, time: 4000});
+                                }
+                            });
+                        });
+                    }
+                });
+            });
+        }
+
+        // 退回：只退一段，旧说法沉底、重来说法摆明面
+        function openRollback(obj) {
+            layer.prompt({title: '退回上一段（写明退回缘由，旧说法沉底留档）', formType: 2}, function (text, idx) {
+                $.post(MODULE_PATH + 'rollback', {id: obj.data.id, remark: text}, function (res) {
+                    layer.close(idx);
+                    if (res.code === 200) {
+                        layer.msg(res.msg, {icon: 1});
+                        table.reload('out-card-table');
+                    } else {
+                        layer.msg(res.msg, {icon: 2, time: 4000});
+                    }
+                });
+            });
+        }
+
+        // 清账缘由：改一次续一笔，先前各笔原样搁着
+        function openReason(obj) {
+            layer.open({
+                type: 1, title: '清账缘由补记（改一次续一笔）', area: ['420px', '240px'],
+                content:
+                    '<form class="layui-form" style="margin:20px">' +
+                    '  <div class="layui-form-item"><label class="layui-form-label">缴回缘由</label>' +
+                    '    <div class="layui-input-block"><select id="reason-select">' +
+                    '      <option value="SCRAP">报废</option><option value="LOST">灭失</option>' +
+                    '      <option value="OUT_PROV">转外省</option><option value="VOLUNTARY">主动交回</option>' +
+                    '    </select></div></div></form>' +
+                    '<div style="margin:0 20px 20px"><button class="pear-btn pear-btn-primary" id="out-card-reason-btn">续一笔</button></div>',
+                success: function () {
+                    form.render();
+                    $('#out-card-reason-btn').on('click', function () {
+                        $.post(MODULE_PATH + 'reason',
+                            {id: obj.data.id, returnReason: $('#reason-select').val()}, function (res) {
+                                if (res.code === 200) {
+                                    layer.closeAll();
+                                    layer.msg(res.msg, {icon: 1});
+                                    table.reload('out-card-table');
+                                } else {
+                                    layer.msg(res.msg, {icon: 2, time: 4000});
+                                }
+                            });
+                    });
+                }
+            });
+        }
+
+        // 缴回履历：只许翻看，明面/沉底都摆出来
+        function openHistory(obj) {
+            $.get(MODULE_PATH + 'history', {id: obj.data.id}, function (res) {
+                let rows = (res.data || []).map(function (s) {
+                    return '<tr>' +
+                        '<td>' + s.happenTime + '</td>' +
+                        '<td>' + STAGE_NAMES[s.stageNo] + '</td>' +
+                        '<td>' + s.revNo + '</td>' +
+                        '<td>' + (ACTION_NAMES[s.actionType] || s.actionType) + '</td>' +
+                        '<td>' + (s.plateCount == null ? '' : s.plateCount) + '</td>' +
+                        '<td>' + (s.licenseStatus || '') + '</td>' +
+                        '<td>' + (s.openCaseFlag == null ? '' : (s.openCaseFlag === 1 ? '有未结' : '无')) + '</td>' +
+                        '<td>' + (s.returnReason ? (REASON_NAMES[s.returnReason] + '(' + s.returnReason + ')') : '') + '</td>' +
+                        '<td>' + (s.currentFlag === 1 ? '<span style="color:#16b777">明面</span>' : '沉底') + '</td>' +
+                        '<td>' + (s.operator || '') + '</td>' +
+                        '</tr>';
+                }).join('');
+                layer.open({
+                    type: 1, title: '缴回履历（卡号 ' + obj.data.bizNo + '）', area: ['1100px', '520px'],
+                    content:
+                        '<div style="padding:15px;overflow:auto">' +
+                        '<table class="layui-table" style="margin:0;font-size:12px">' +
+                        '<thead><tr><th>时辰</th><th>段</th><th>段内序号</th><th>动作</th><th>实收枚数</th>' +
+                        '<th>行驶证/检验</th><th>未结事故罚款</th><th>缘由</th><th>版本</th><th>经办人</th></tr></thead>' +
+                        '<tbody>' + rows + '</tbody></table></div>'
+                });
+            });
+        }
+
+        // 年终报数：两栏合起来要等于当年起的卡数
+        function openSummary() {
+            $.get(MODULE_PATH + 'summary', function (res) {
+                let d = res.data;
+                let balanced = (d.finishedCount + d.activeCount === d.openedCount);
+                layer.alert(
+                    '<div style="line-height:2">' +
+                    '年份：<b>' + d.year + '</b><br>' +
+                    '当年起的卡数：<b>' + d.openedCount + '</b><br>' +
+                    '已了结（向外报的数）：<b style="color:#16b777">' + d.finishedCount + '</b><br>' +
+                    '走到半路（单列一栏）：<b style="color:#ffb800">' + d.activeCount + '</b><br>' +
+                    '两栏合计：' + (d.finishedCount + d.activeCount) +
+                    '（' + (balanced ? '<span style="color:#16b777">对得齐</span>' : '<span style="color:#ed4014">对不齐！</span>') + '）' +
+                    '</div>',
+                    {title: '年终报数', area: ['420px', '320px']}
+                );
+            });
+        }
+    });
+</script>
+</html>

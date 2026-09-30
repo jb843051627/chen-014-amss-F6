@@ -36,6 +36,11 @@ public class TAmssOutCard implements Serializable {
     @ApiModelProperty(value = "变型拖拉机牌证缴回事务卡号")
     private String bizNo;
 
+    /** 车辆号牌（一车一卡，按此号牌认车） */
+    @TableField("vehicle_plate_no")
+    @ApiModelProperty(value = "车辆号牌（一车一卡，按此号牌认车）")
+    private String vehiclePlateNo;
+
     /** 当前缴回段 0..3（收牌/验车/清账/了结） */
     @TableField("stage")
     @ApiModelProperty(value = "当前缴回段 0..3（收牌/验车/清账/了结）")
@@ -102,6 +107,14 @@ public class TAmssOutCard implements Serializable {
 
     public void setBizNo(String bizNo) {
         this.bizNo = bizNo;
+    }
+
+    public String getVehiclePlateNo() {
+        return vehiclePlateNo;
+    }
+
+    public void setVehiclePlateNo(String vehiclePlateNo) {
+        this.vehiclePlateNo = vehiclePlateNo;
     }
 
     public Integer getStage() {
